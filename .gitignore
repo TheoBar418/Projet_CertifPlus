@@ -11,7 +11,10 @@ bundle_serveur.pem
 # --- Fichiers temporaires ---
 *.csr
 *.srl
-
+query.tsq
+response.tsr
+signature.bin
+temp_data.txt
 # --- Images générées dynamiquement ---
 attestation_a_verifier.png
 qrcode*.png

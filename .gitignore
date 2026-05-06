@@ -8,15 +8,9 @@ __pycache__/
 *.key.pem
 bundle_serveur.pem
 
-# --- Fichiers temporaires ---
+# --- Dossier temporaires ---
+temp/
 *.csr
 *.srl
-query.tsq
-response.tsr
-signature.bin
-temp_data.txt
 # --- Images générées dynamiquement ---
-attestation_a_verifier.png
-qrcode*.png
-stegano_*.png
-combinaison.png
+mon_diplome.png

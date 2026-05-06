@@ -1,0 +1,18 @@
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+
+# --- Sécurité ---
+*.key
+*.key.pem
+
+# --- Fichiers temporaires ---
+*.csr
+*.srl
+
+# --- Images générées dynamiquement ---
+attestation_a_verifier.png
+qrcode*.png
+stegano_*.png
+combinaison.png

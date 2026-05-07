@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import os
-from bottle import route, run, request, response
+from bottle import route, run, request, response, static_file
 from PIL import Image
 import qrcode
 import zbarlight
@@ -62,8 +62,44 @@ def signer_donnees(donnees_texte):
         
     return signature_binaire
 
-def verifier_signature(donnees_texte, signature):
-    pass
+def verifier_signature(donnees_texte, signature_binaire):
+    """
+    Demande à OpenSSL de vérifier mathematiquement la signature.
+    """
+    print("-> Verification de la signature avec la cle publique...")
+    
+    # On recrée les fichiers temporaires pour OpenSSL
+    with open("temp/verif_data.txt", "w") as f:
+        f.write(donnees_texte)
+    with open("temp/verif_sig.bin", "wb") as f:
+        f.write(signature_binaire)
+        
+    # On lance la vérification avec la cle publique
+    resultat = subprocess.run([
+        "openssl", "dgst", "-sha256", "-verify", "PKI/ecc.signature.pub.pem", 
+        "-signature", "temp/verif_sig.bin", "temp/verif_data.txt"
+    ], capture_output=True, text=True)
+    
+    # OpenSSL renvoie "Verified OK" si tout est bon
+    if "Verified OK" in resultat.stdout:
+        return True
+    return False
+
+def lire_qr_code(chemin_image):
+    """
+    Utilise zbarlight pour trouver et lire le QR Code sur l'image.
+    """
+    print("-> Lecture du QR Code...")
+    with open(chemin_image, 'rb') as f:
+        image = Image.open(f)
+        image.load()
+        
+    codes = zbarlight.scan_codes(['qrcode'], image)
+    if codes:
+        # Le QR Code contient de l'ASCII (Base64), on le retransforme en binaire
+        signature_binaire = base64.b64decode(codes[0])
+        return signature_binaire
+    return None
 
 
 # ==========================================
@@ -80,7 +116,10 @@ def modifier_pixel(pixel, bit):
     r_val = int(rep_bin_mod, 2)
     return tuple([r_val] + list(pixel[1:]))
 
+
+# ==========================================
 # Pas issue de l'enonce
+# ==========================================
 def cacher_donnees(chemin_image_entree, donnees_texte, timestamp_binaire, chemin_sortie):
     print("-> Injection steganographique en cours...")
     
@@ -114,13 +153,58 @@ def cacher_donnees(chemin_image_entree, donnees_texte, timestamp_binaire, chemin
     img.save(chemin_sortie)
     print(f"-> Image steganographiee sauvegardee sous : {chemin_sortie}")
 
+def recuperer_donnees(chemin_image):
+    """
+    Lit les pixels de l'image pour retrouver les données cachées.
+    """
+    print("-> Extraction stéganographique en cours...")
+    img = Image.open(chemin_image)
+    pixels = img.load()
+    largeur, hauteur = img.size
+    
+    bits_extraits = ""
+    # On parcourt tous les pixels pour recuperer le dernier bit rouge
+    for y in range(hauteur):
+        for x in range(largeur):
+            r_val = pixels[x, y][0]
+            rep_binaire = bin(r_val)[2:]
+            bits_extraits += rep_binaire[-1]
+            
+    # On regroupe les bits par 8 pour refaire des octets (bytes)
+    bytes_extraits = bytearray()
+    for i in range(0, len(bits_extraits), 8):
+        octet = bits_extraits[i:i+8]
+        if len(octet) == 8:
+            bytes_extraits.append(int(octet, 2))
+            
+    # On cherche notre fameux marqueur de fin pour arrêter de lire du "bruit"
+    marqueur = b"===FIN==="
+    index_fin = bytes_extraits.find(marqueur)
+    
+    if index_fin != -1:
+        donnees_utiles = bytes_extraits[:index_fin]
+        # Les 64 premiers octets sont le texte, le reste c'est le timestamp 
+        donnees_texte = donnees_utiles[:64].decode('utf-8')
+        timestamp_binaire = donnees_utiles[64:]
+        return donnees_texte, timestamp_binaire
+        
+    return None, None 
+
 
 # ==========================================
 # Les routes web (Bottle)
 # ==========================================
 
+@route('/', method='GET')
+def index():
+    """
+    Affiche la page d'accueil web.
+    """
+    return static_file('index.html', root='.')
+
 @route('/creation', method='POST')
 def creation_attestation():
+    print("\n--- NOUVELLE DEMANDE DE CREATION ---")
     # Recuperation des donnees envoyees
     identite = request.forms.get('identite')
     intitule = request.forms.get('intitule_certif')
@@ -154,11 +238,33 @@ def creation_attestation():
 
 @route('/verification', method='POST')
 def verification_attestation():
-    # Recuperation de l'image envoyee
+    print("\n--- NOUVELLE DEMANDE DE VERIFICATION ---")
     contenu_image = request.files.get('image')
+    
     if contenu_image:
-        contenu_image.save('temp/attestation_a_verifier.png', overwrite=True)
-        return "Image reçue pour verification..."
+        chemin_image = 'temp/attestation_a_verifier.png'
+        contenu_image.save(chemin_image, overwrite=True)
+        
+        # Extraction Steganographique
+        donnees_texte, timestamp = recuperer_donnees(chemin_image)
+        if not donnees_texte:
+            return "ERREUR : Aucune donnee steganographique trouvee. L'image a ete alteree ou n'est pas un diplome CertifPlus."
+            
+        print(f"Donnees extraites : '{donnees_texte}'")
+        
+        # Lecture du QR Code
+        signature = lire_qr_code(chemin_image)
+        if not signature:
+            return "ERREUR : Impossible de lire le QR code."
+            
+        # Verification mathematique
+        est_valide = verifier_signature(donnees_texte, signature)
+        
+        if est_valide:
+            return f"SUCCES : Le diplome est authentique et mathematiquement valide !\nIl a ete delivre pour : {donnees_texte.strip()}"
+        else:
+            return "ALERTE FRAUDE : La signature cryptographique est invalide. Le texte ou l'image a ete modifie !"
+            
     return "Erreur : aucune image fournie"
 
 @route('/fond')

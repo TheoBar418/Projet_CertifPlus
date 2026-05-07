@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portail CertifPlus</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background-color: #f4f4f9; }
+        .container { max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; }
+        .section { margin-bottom: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        label { font-weight: bold; display: block; margin-top: 10px; }
+        input[type="text"], input[type="file"] { width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 15px; box-sizing: border-box; }
+        button { background-color: #0056b3; color: white; padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+        button:hover { background-color: #004494; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Portail CertifPlus</h1>
+
+    <div class="section">
+        <h2>Espace Étudiant</h2>
+        <p>Demandez votre diplôme certifié.</p>
+        <form action="/creation" method="POST">
+            <label for="identite">Prénom et Nom :</label>
+            <input type="text" id="identite" name="identite" required placeholder="Ex: Theo Barbey">
+
+            <label for="intitule_certif">Intitulé de la certification :</label>
+            <input type="text" id="intitule_certif" name="intitule_certif" required placeholder="Ex: Master CRYPTIF">
+
+            <button type="submit">Générer mon attestation</button>
+        </form>
+    </div>
+
+    <div class="section">
+        <h2>Espace Employeur</h2>
+        <p>Vérifiez l'authenticité d'un diplôme.</p>
+        <form action="/verification" method="POST" enctype="multipart/form-data">
+            <label for="image">Uploadez l'attestation (format PNG) :</label>
+            <input type="file" id="image" name="image" accept="image/png" required>
+
+            <button type="submit" style="background-color: #28a745;">Lancer l'audit de sécurité</button>
+        </form>
+    </div>
+</div>
+
+</body>
+</html>

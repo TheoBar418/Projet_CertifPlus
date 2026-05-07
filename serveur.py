@@ -6,11 +6,16 @@ import qrcode
 import zbarlight
 import subprocess
 import base64
+import urllib.request
+import urllib.parse
+import re
 
 
 # Creation du dossier temporaire
 os.makedirs('temp', exist_ok=True)
 
+# Clé secrète pour chiffrer les cookies de session
+SECRET_COOKIE = "LaCleSecreteDeCertifPlus2026"
 
 # ==========================================
 # Cryptographie & Horodatage
@@ -103,7 +108,7 @@ def lire_qr_code(chemin_image):
 
 
 # ==========================================
-# Steganographie (Issue de l'enonce)
+# Steganographie
 # ==========================================
 def vers_8bit(c):
     chaine_binaire = bin(ord(c))[2:]
@@ -116,10 +121,6 @@ def modifier_pixel(pixel, bit):
     r_val = int(rep_bin_mod, 2)
     return tuple([r_val] + list(pixel[1:]))
 
-
-# ==========================================
-# Pas issue de l'enonce
-# ==========================================
 def cacher_donnees(chemin_image_entree, donnees_texte, timestamp_binaire, chemin_sortie):
     print("-> Injection steganographique en cours...")
     
@@ -192,6 +193,68 @@ def recuperer_donnees(chemin_image):
 
 
 # ==========================================
+# Configuration du SSO CAS Unilim
+# ==========================================
+CAS_SERVER = "https://cas.unilim.fr/cas"
+# C'est l'adresse de votre serveur à laquelle le CAS va renvoyer l'utilisateur
+SERVICE_URL = "http://localhost:8080/retour_cas" 
+
+@route('/login', method='POST')
+def login_sso():
+    """
+    Intégration du code de l'enonce pour valider l'acces via cas.unilim.fr
+    """
+    username = request.forms.get('username')
+    password = request.forms.get('password')
+
+    try:
+        # Recuperation du token CSRF sur la page d'accueil du CAS
+        re_token = re.compile(rb'name="token" value="([^"]+)"')
+        req_page = urllib.request.Request('https://cas.unilim.fr')
+        rep = urllib.request.urlopen(req_page)
+        contenu = rep.read()
+        
+        resultat = re_token.search(contenu)
+        if not resultat:
+            return "ERREUR : Impossible de recuperer le token de securite du CAS."
+        
+        token = resultat.group(1)
+
+        # Tentative de connexion avec les identifiants de l'étudiant
+        cookieProcessor = urllib.request.HTTPCookieProcessor()
+        opener = urllib.request.build_opener(cookieProcessor)
+        
+        # On utilise les variables username/password du formulaire
+        data = urllib.parse.urlencode({
+            'user': username, 
+            'password': password, 
+            'token': token.decode('ascii')
+        })
+        
+        req_login = urllib.request.Request(
+            'https://cas.unilim.fr', 
+            bytes(data, encoding='ascii')
+        )
+        
+        # On effectue la requete de login
+        opener.open(req_login)
+        
+        # Verification de la presence du cookie 'lemonldap'
+        # Si ce cookie est present, c'est que le CAS a accepte la connexion
+        cookies = [c for c in cookieProcessor.cookiejar if c.name == 'lemonldap']
+        
+        if cookies:
+            # Succes : On cree notre propre cookie de session pour l'application
+            response.set_cookie("session_sso", username, secret=SECRET_COOKIE, max_age=3600)
+            return f"Authentification reussie via CAS ! Bienvenue {username}."
+        else:
+            return "ECHEC : Identifiants incorrects ou TOTP requis (hors reseau)."
+
+    except Exception as e:
+        return f"ERREUR RÉSEAU : Impossible de joindre le serveur CAS ({e})"
+
+
+# ==========================================
 # Les routes web (Bottle)
 # ==========================================
 
@@ -204,6 +267,13 @@ def index():
 
 @route('/creation', method='POST')
 def creation_attestation():
+    # --- VÉRIFICATION DE SÉCURITÉ (SSO) ---
+    utilisateur = request.get_cookie("session_sso", secret=SECRET_COOKIE)
+    if not utilisateur:
+        return "ACCES REFUSE : Vous devez d'abord vous connecter avec vos identifiants universitaires (SSO) !"
+    # Recuperation des donnees envoyees
+    identite = request.forms.get('identite')
+
     print("\n--- NOUVELLE DEMANDE DE CREATION ---")
     # Recuperation des donnees envoyees
     identite = request.forms.get('identite')

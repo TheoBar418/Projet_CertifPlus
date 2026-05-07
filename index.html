@@ -18,19 +18,18 @@
 <body>
 
 <div class="container">
-    <h1>Portail CertifPlus</h1>
+    <div class="section" style="background-color: #e9ecef;">
+        <h2 style="text-align: center;">Connexion Universitaire (SSO)</h2>
+        <p style="text-align: center;">Vérification des accès via cas.unilim.fr</p>
+        
+        <form action="/login" method="POST">
+            <label for="username">Identifiant Unilim :</label>
+            <input type="text" id="username" name="username" required>
 
-    <div class="section">
-        <h2>Espace Étudiant</h2>
-        <p>Demandez votre diplôme certifié.</p>
-        <form action="/creation" method="POST">
-            <label for="identite">Prénom et Nom :</label>
-            <input type="text" id="identite" name="identite" required placeholder="Ex: Theo Barbey">
+            <label for="password">Mot de passe :</label>
+            <input type="password" id="password" name="password" style="width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 15px; box-sizing: border-box;" required>
 
-            <label for="intitule_certif">Intitulé de la certification :</label>
-            <input type="text" id="intitule_certif" name="intitule_certif" required placeholder="Ex: Master CRYPTIF">
-
-            <button type="submit">Générer mon attestation</button>
+            <button type="submit" style="background-color: #d22d2d; color: white; font-weight: bold;">Authentification</button>
         </form>
     </div>
 

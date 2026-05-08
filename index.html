@@ -15,35 +15,52 @@
         button:hover { background-color: #004494; }
     </style>
 </head>
+
 <body>
+    <div class="container">
+        <h1> Portail CertifPlus</h1>
 
-<div class="container">
-    <div class="section" style="background-color: #e9ecef;">
-        <h2 style="text-align: center;">Connexion Universitaire (SSO)</h2>
-        <p style="text-align: center;">Vérification des accès via cas.unilim.fr</p>
-        
-        <form action="/login" method="POST">
-            <label for="username">Identifiant Unilim :</label>
-            <input type="text" id="username" name="username" required>
+        <div id="section-login" class="section" style="background-color: #e9ecef;">
+            <h2> Connexion Universitaire (SSO)</h2>
+            <form action="/login" method="POST">
+                <label for="username">Identifiant Unilim :</label>
+                <input type="text" id="username" name="username" required>
+                <label for="password">Mot de passe :</label>
+                <input type="password" id="password" name="password" style="width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 15px; box-sizing: border-box;" required>
+                <button type="submit" style="background-color: #d22d2d; color: white;">Authentification</button>
+            </form>
+        </div>
 
-            <label for="password">Mot de passe :</label>
-            <input type="password" id="password" name="password" style="width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 15px; box-sizing: border-box;" required>
+        <div id="section-etudiant" class="section" style="display:none;">
+            <h2>Espace Étudiant</h2>
+            <p>Connecté en tant que <b id="user-display"></b> | <a href="/logout">Déconnexion</a></p>
+            <form action="/creation" method="POST">
+                <label for="identite">Prénom et Nom :</label>
+                <input type="text" id="identite" name="identite" required placeholder="Ex: Theo Barbey">
+                <label for="intitule_certif">Intitulé :</label>
+                <input type="text" id="intitule_certif" name="intitule_certif" required placeholder="Ex: Master CRYPTIF">
+                <button type="submit">Générer mon attestation</button>
+            </form>
+        </div>
 
-            <button type="submit" style="background-color: #d22d2d; color: white; font-weight: bold;">Authentification</button>
-        </form>
+        <div class="section">
+            <h2>Espace Employeur</h2>
+            <form action="/verification" method="POST" enctype="multipart/form-data">
+                <input type="file" name="image" accept="image/png" required>
+                <button type="submit" style="background-color: #28a745;">Vérifier un diplôme</button>
+            </form>
+        </div>
     </div>
-
-    <div class="section">
-        <h2>Espace Employeur</h2>
-        <p>Vérifiez l'authenticité d'un diplôme.</p>
-        <form action="/verification" method="POST" enctype="multipart/form-data">
-            <label for="image">Uploadez l'attestation (format PNG) :</label>
-            <input type="file" id="image" name="image" accept="image/png" required>
-
-            <button type="submit" style="background-color: #28a745;">Lancer l'audit de sécurité</button>
-        </form>
-    </div>
-</div>
-
+    <script>
+        // Petit script pour vérifier si on est connecté
+        function checkLogin() {
+            // On cherche le cookie
+            if (document.cookie.includes("session_sso")) {
+                document.getElementById('section-login').style.display = 'none';
+                document.getElementById('section-etudiant').style.display = 'block';
+                document.getElementById('user-display').innerText = "Utilisateur autorisé";
+            }
+        }
+        window.onload = checkLogin;
+    </script>
 </body>
-</html>

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import os
-from bottle import route, run, request, response, static_file
+from bottle import route, run, request, response, static_file, redirect, HTTPResponse
 from PIL import Image
 import qrcode
 import zbarlight
@@ -199,6 +199,9 @@ CAS_SERVER = "https://cas.unilim.fr/cas"
 # C'est l'adresse de votre serveur à laquelle le CAS va renvoyer l'utilisateur
 SERVICE_URL = "http://localhost:8080/retour_cas" 
 
+@route('/logout')
+def logout():
+    response.delete_cookie("session_sso", path='/')
 @route('/login', method='POST')
 def login_sso():
     """
@@ -245,12 +248,27 @@ def login_sso():
         
         if cookies:
             # Succes : On cree notre propre cookie de session pour l'application
-            response.set_cookie("session_sso", username, secret=SECRET_COOKIE, max_age=3600)
-            return f"Authentification reussie via CAS ! Bienvenue {username}."
+            response.set_cookie("session_sso", username, secret=SECRET_COOKIE, max_age=3600, path='/' )
+            
+            # On affiche le succes et on redirige apres 2 secondes 
+            return f"""
+            <div style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
+                <h2 style="color: #28a745;">Authentification réussie via CAS !</h2>
+                <p>Bienvenue <b>{username}</b>.</p>
+                <p style="color: #666;"><i>Redirection automatique vers le portail dans 2 secondes...</i></p>
+                <script>
+                    setTimeout(function() {{
+                        window.location.href = "/";
+                    }}, 2000);
+                </script>
+            </div>
+            """
         else:
-            return "ECHEC : Identifiants incorrects ou TOTP requis (hors reseau)."
-
+            return "ECHEC : Identifiants incorrects ou TOTP requis (hors réseau)."
+    except HTTPResponse :
+        raise
     except Exception as e:
+        print(f"ERREUR : {repr(e)}")
         return f"ERREUR RÉSEAU : Impossible de joindre le serveur CAS ({e})"
 
 

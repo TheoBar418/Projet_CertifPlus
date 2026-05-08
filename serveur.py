@@ -9,7 +9,11 @@ import base64
 import urllib.request
 import urllib.parse
 import re
+import jwt
+import datetime
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+CLE_AES_GCM = b"CleSecreteDe32CaracteresPourAES!" # Exactement 32 caracteres
 
 # Creation du dossier temporaire
 os.makedirs('temp', exist_ok=True)
@@ -49,46 +53,46 @@ def obtenir_timestamp(donnees_texte):
         
     return timestamp_binaire
 
-def signer_donnees(donnees_texte):
+def signer_donnees_jwt(identite, intitule):
     """
-    Signe les donnees avec la cle privee de CertifPlus.
+    Crée un JWT signé avec la clé privée ECC.
     """
-    print("-> Signature cryptographique des donnees...")
-    # On s'assure que le fichier temporaire contient bien nos donnees
-    with open("temp/temp_data.txt", "w") as f:
-        f.write(donnees_texte)
-        
-    # On demande a OpenSSL de signer le fichier avec notre cle ECC
-    subprocess.run(["openssl", "dgst", "-sha256", "-sign", "PKI/ecc.signature.key.pem", "-out", "temp/signature.bin", "temp/temp_data.txt"])
+    print("-> Génération du JWT...")
     
-    # On recupere la signature generee
-    with open("temp/signature.bin", "rb") as f:
-        signature_binaire = f.read()
-        
-    return signature_binaire
+    # Chargement de la cle privee
+    with open("PKI/ecc.signature.key.pem", "rb") as f:
+        private_key = f.read()
 
-def verifier_signature(donnees_texte, signature_binaire):
+    # Définition du contenu (Payload)
+    payload = {
+        "iss": "CertifPlus",        # Emetteur
+        "sub": identite,            # Sujet (l'etudiant)
+        "cert": intitule,           # La certification
+        "iat": datetime.datetime.utcnow(), # Date de creation
+        "exp": datetime.datetime.utcnow() + datetime.timedelta(days=365) # Validite 1 an
+    }
+
+    # Creation du jeton signe en ES256 (ECDSA avec SHA-256)
+    token = jwt.encode(payload, private_key, algorithm="ES256")
+    return token
+
+def verifier_jwt(token):
     """
-    Demande à OpenSSL de vérifier mathematiquement la signature.
+    Verifie le JWT avec la cle publique et renvoie les donnees si valide.
     """
-    print("-> Verification de la signature avec la cle publique...")
+    print("-> Verification mathematique du JWT...")
     
-    # On recrée les fichiers temporaires pour OpenSSL
-    with open("temp/verif_data.txt", "w") as f:
-        f.write(donnees_texte)
-    with open("temp/verif_sig.bin", "wb") as f:
-        f.write(signature_binaire)
-        
-    # On lance la vérification avec la cle publique
-    resultat = subprocess.run([
-        "openssl", "dgst", "-sha256", "-verify", "PKI/ecc.signature.pub.pem", 
-        "-signature", "temp/verif_sig.bin", "temp/verif_data.txt"
-    ], capture_output=True, text=True)
-    
-    # OpenSSL renvoie "Verified OK" si tout est bon
-    if "Verified OK" in resultat.stdout:
-        return True
-    return False
+    with open("PKI/ecc.signature.pub.pem", "rb") as f:
+        public_key = f.read()
+
+    try:
+        # La bibliotheque verifie la signature et la date d'expiration
+        decoded = jwt.decode(token, public_key, algorithms=["ES256"])
+        return True, decoded
+    except jwt.ExpiredSignatureError:
+        return False, "Le jeton a expire."
+    except jwt.InvalidTokenError:
+        return False, "Signature invalide ou jeton corrompu."
 
 def lire_qr_code(chemin_image):
     """
@@ -121,83 +125,93 @@ def modifier_pixel(pixel, bit):
     r_val = int(rep_bin_mod, 2)
     return tuple([r_val] + list(pixel[1:]))
 
-def cacher_donnees(chemin_image_entree, donnees_texte, timestamp_binaire, chemin_sortie):
-    print("-> Injection steganographique en cours...")
+def cacher_donnees(chemin_image_entree, token_jwt, timestamp_binaire, chemin_sortie):
+    print("-> Chiffrement AEAD et Injection stéganographique...")
     
-    # Preparation du "Payload" qu'on va cacher
-    # On colle les donnees (converties en bytes) avec le timestamp, et un marqueur de fin
-    payload_bytes = donnees_texte.encode('utf-8') + timestamp_binaire + b'===FIN==='
+    # On prepare les donnees avec un separateur clair (|||)
+    donnees_brutes = token_jwt.encode('utf-8') + b'|||' + timestamp_binaire
     
-    # Conversion de tout ce bloc en une immense chaine de '0' et de '1'
+    # Chiffrement AEAD (AES-GCM)
+    aesgcm = AESGCM(CLE_AES_GCM)
+    nonce = os.urandom(12) # Le nonce doit etre unique (12 octets standards)
+    donnees_chiffrees = aesgcm.encrypt(nonce, donnees_brutes, None)
+    
+    # Le payload final = Nonce + Texte chiffre + Marqueur de fin
+    payload_bytes = nonce + donnees_chiffrees + b'===FIN==='
+    
+    # Conversion en bits et injection 
     bits_a_cacher = ''.join([format(b, '08b') for b in payload_bytes])
     longueur_bits = len(bits_a_cacher)
     
-    # Ouverture de l'image
     img = Image.open(chemin_image_entree)
     pixels = img.load()
     largeur, hauteur = img.size
     
     idx_bit = 0
-    
-    # On parcourt les pixels un par un pour cacher les bits
     for y in range(hauteur):
         for x in range(largeur):
             if idx_bit < longueur_bits:
                 pixels[x, y] = modifier_pixel(pixels[x, y], bits_a_cacher[idx_bit])
                 idx_bit += 1
             else:
-                break # On a tout cache, on sort de la boucle !
+                break
         if idx_bit >= longueur_bits:
             break
             
-    # Sauvegarde de l'image finale
     img.save(chemin_sortie)
-    print(f"-> Image steganographiee sauvegardee sous : {chemin_sortie}")
+    print(f"-> Image stéganographiée et chiffrée sauvegardée !")
 
 def recuperer_donnees(chemin_image):
-    """
-    Lit les pixels de l'image pour retrouver les données cachées.
-    """
-    print("-> Extraction stéganographique en cours...")
+    print("-> Extraction et Déchiffrement AEAD en cours...")
     img = Image.open(chemin_image)
     pixels = img.load()
     largeur, hauteur = img.size
     
     bits_extraits = ""
-    # On parcourt tous les pixels pour recuperer le dernier bit rouge
     for y in range(hauteur):
         for x in range(largeur):
             r_val = pixels[x, y][0]
             rep_binaire = bin(r_val)[2:]
             bits_extraits += rep_binaire[-1]
             
-    # On regroupe les bits par 8 pour refaire des octets (bytes)
     bytes_extraits = bytearray()
     for i in range(0, len(bits_extraits), 8):
         octet = bits_extraits[i:i+8]
         if len(octet) == 8:
             bytes_extraits.append(int(octet, 2))
             
-    # On cherche notre fameux marqueur de fin pour arrêter de lire du "bruit"
     marqueur = b"===FIN==="
     index_fin = bytes_extraits.find(marqueur)
     
     if index_fin != -1:
         donnees_utiles = bytes_extraits[:index_fin]
-        # Les 64 premiers octets sont le texte, le reste c'est le timestamp 
-        donnees_texte = donnees_utiles[:64].decode('utf-8')
-        timestamp_binaire = donnees_utiles[64:]
-        return donnees_texte, timestamp_binaire
         
-    return None, None 
+        # Separation Nonce (12 premiers octets) / Chiffre (Le reste)
+        nonce = donnees_utiles[:12]
+        donnees_chiffrees = donnees_utiles[12:]
+        
+        # Dechiffrement AEAD (Garantit la confidentialite ET l'integrite)
+        try:
+            aesgcm = AESGCM(CLE_AES_GCM)
+            donnees_decryptees = aesgcm.decrypt(nonce, donnees_chiffrees, None)
+        except Exception as e:
+            print("Echec du dechiffrement AEAD (Mot de passe invalide ou alteration !)")
+            return None, None
+
+        # Separation JWT / Timestamp via notre separateur
+        parties = donnees_decryptees.split(b'|||', 1)
+        if len(parties) == 2:
+            token_jwt = parties[0].decode('utf-8')
+            timestamp_binaire = parties[1]
+            return token_jwt, timestamp_binaire
+            
+    return None, None
 
 
 # ==========================================
 # Configuration du SSO CAS Unilim
 # ==========================================
 CAS_SERVER = "https://cas.unilim.fr/cas"
-# C'est l'adresse de votre serveur à laquelle le CAS va renvoyer l'utilisateur
-SERVICE_URL = "http://localhost:8080/retour_cas" 
 
 @route('/logout')
 def logout():
@@ -285,73 +299,62 @@ def index():
 
 @route('/creation', method='POST')
 def creation_attestation():
-    # --- VÉRIFICATION DE SÉCURITÉ (SSO) ---
     utilisateur = request.get_cookie("session_sso", secret=SECRET_COOKIE)
     if not utilisateur:
-        return "ACCES REFUSE : Vous devez d'abord vous connecter avec vos identifiants universitaires (SSO) !"
-    # Recuperation des donnees envoyees
-    identite = request.forms.get('identite')
+        return "ACCES REFUSE : Vous devez d'abord vous connecter !"
 
-    print("\n--- NOUVELLE DEMANDE DE CREATION ---")
-    # Recuperation des donnees envoyees
     identite = request.forms.get('identite')
     intitule = request.forms.get('intitule_certif')
-    print(f"Demande reçue pour : {identite} - {intitule}")
+    print(f"\n--- NOUVELLE DEMANDE (JWT + AEAD) : {identite} ---")
 
-    # Formatage a 64 caracteres
-    donnees_64 = formater_informations(identite, intitule)
-    print(f"Donnees formatees ({len(donnees_64)} caracteres) : '{donnees_64}'")
-
-    # Obtention du Timestamp
-    timestamp = obtenir_timestamp(donnees_64)
-    print(f"Timestamp reçu (Taille: {len(timestamp)} octets)")
-
-    # Signature
-    signature = signer_donnees(donnees_64)
-    print(f"Signature generee (Taille: {len(signature)} octets)")
-
-    # Generation de l'image
-    generer_visuel(identite, intitule, signature)
+    # Generation du JWT
+    token_jwt = signer_donnees_jwt(identite, intitule)
     
-    # Steganographie : On cache les donnees dans l'image finale
-    cacher_donnees('temp/attestation_finale.png', donnees_64, timestamp, 'temp/attestation_securisee.png')
+    # Horodatage externe
+    timestamp = obtenir_timestamp(token_jwt)
+
+    # Generation visuelle avec QR Code
+    generer_visuel(identite, intitule, token_jwt)    
+
+    # Steganographie chiffree
+    cacher_donnees('temp/attestation_finale.png', token_jwt, timestamp, 'temp/attestation_securisee.png')    
     
-    # On renvoie l'image securisee au client qui a fait la requete
     response.set_header('Content-type', 'image/png')
-    # Force le navigateur/curl à telecharger le fichier sous un beau nom
     response.set_header('Content-Disposition', 'attachment; filename="diplome_certifplus.png"') 
-    
     with open('temp/attestation_securisee.png', 'rb') as f:
         return f.read()
 
 @route('/verification', method='POST')
 def verification_attestation():
-    print("\n--- NOUVELLE DEMANDE DE VERIFICATION ---")
+    print("\n--- VERIFICATION DE DIPLOME ---")
     contenu_image = request.files.get('image')
     
     if contenu_image:
         chemin_image = 'temp/attestation_a_verifier.png'
         contenu_image.save(chemin_image, overwrite=True)
         
-        # Extraction Steganographique
-        donnees_texte, timestamp = recuperer_donnees(chemin_image)
-        if not donnees_texte:
-            return "ERREUR : Aucune donnee steganographique trouvee. L'image a ete alteree ou n'est pas un diplome CertifPlus."
-            
-        print(f"Donnees extraites : '{donnees_texte}'")
-        
-        # Lecture du QR Code
-        signature = lire_qr_code(chemin_image)
-        if not signature:
+        # Lecture du JWT depuis le QR Code
+        token_qr_bytes = lire_qr_code(chemin_image)
+        if not token_qr_bytes:
             return "ERREUR : Impossible de lire le QR code."
+        token_qr = token_qr_bytes.decode('utf-8')
             
-        # Verification mathematique
-        est_valide = verifier_signature(donnees_texte, signature)
+        # Extraction steganographique et dechiffrement AEAD
+        token_stego, timestamp = recuperer_donnees(chemin_image)
+        if not token_stego:
+            return "ERREUR : Donnees cachees introuvables ou alterees (AEAD Check failed)."
+            
+        # Comparaison
+        if token_qr != token_stego:
+            return "ALERTE FRAUDE : Le QR Code et les pixels caches ne correspondent pas !"
+
+        # Verification de la signature cryptographique du JWT
+        succes, payload = verifier_jwt(token_qr)
         
-        if est_valide:
-            return f"SUCCES : Le diplome est authentique et mathematiquement valide !\nIl a ete delivre pour : {donnees_texte.strip()}"
+        if succes:
+            return f"SUCCES : Diplome authentique ! Emis pour {payload.get('sub')} ({payload.get('cert')})."
         else:
-            return "ALERTE FRAUDE : La signature cryptographique est invalide. Le texte ou l'image a ete modifie !"
+            return f"ALERTE FRAUDE : Jeton invalide ou expire ({payload})."
             
     return "Erreur : aucune image fournie"
 
@@ -367,18 +370,15 @@ def recuperer_fond():
 # Generation visuelle
 # ==========================================
 
-def generer_visuel(identite, intitule, signature_binaire):
+def generer_visuel(identite, intitule, token):
     """
     Cree l'image finale avec le texte et le QR code de la signature.
     """
     print("-> Generation du visuel de l'attestation...")
     
-    # Conversion de la signature en ASCII (Base64) pour le QR code
-    signature_ascii = base64.b64encode(signature_binaire).decode('utf-8')
-    
     # Creation du QR code
-    qr = qrcode.make(signature_ascii)
-    qr.save("temp/qrcode.png", scale=2)
+    qr = qrcode.make(token) 
+    qr.save("temp/qrcode.png", scale="2")
 
     # Redimensionnement strict à 210x210 pixels
     img_qr = Image.open("temp/qrcode.png")

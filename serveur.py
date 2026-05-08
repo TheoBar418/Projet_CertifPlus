@@ -18,7 +18,7 @@ CLE_AES_GCM = b"CleSecreteDe32CaracteresPourAES!" # Exactement 32 caracteres
 # Creation du dossier temporaire
 os.makedirs('temp', exist_ok=True)
 
-# Clé secrète pour chiffrer les cookies de session
+# Cle secrete pour chiffrer les cookies de session
 SECRET_COOKIE = "LaCleSecreteDeCertifPlus2026"
 
 # ==========================================
@@ -55,15 +55,15 @@ def obtenir_timestamp(donnees_texte):
 
 def signer_donnees_jwt(identite, intitule):
     """
-    Crée un JWT signé avec la clé privée ECC.
+    Cree un JWT signe avec la cle privee ECC.
     """
-    print("-> Génération du JWT...")
+    print("-> Generation du JWT...")
     
     # Chargement de la cle privee
     with open("PKI/ecc.signature.key.pem", "rb") as f:
         private_key = f.read()
 
-    # Définition du contenu (Payload)
+    # Definition du contenu (Payload)
     payload = {
         "iss": "CertifPlus",        # Emetteur
         "sub": identite,            # Sujet (l'etudiant)
@@ -105,11 +105,8 @@ def lire_qr_code(chemin_image):
         
     codes = zbarlight.scan_codes(['qrcode'], image)
     if codes:
-        # Le QR Code contient de l'ASCII (Base64), on le retransforme en binaire
-        signature_binaire = base64.b64decode(codes[0])
-        return signature_binaire
+        return codes[0]
     return None
-
 
 # ==========================================
 # Steganographie
@@ -126,7 +123,7 @@ def modifier_pixel(pixel, bit):
     return tuple([r_val] + list(pixel[1:]))
 
 def cacher_donnees(chemin_image_entree, token_jwt, timestamp_binaire, chemin_sortie):
-    print("-> Chiffrement AEAD et Injection stéganographique...")
+    print("-> Chiffrement AEAD et Injection steganographique...")
     
     # On prepare les donnees avec un separateur clair (|||)
     donnees_brutes = token_jwt.encode('utf-8') + b'|||' + timestamp_binaire
@@ -159,10 +156,10 @@ def cacher_donnees(chemin_image_entree, token_jwt, timestamp_binaire, chemin_sor
             break
             
     img.save(chemin_sortie)
-    print(f"-> Image stéganographiée et chiffrée sauvegardée !")
+    print(f"-> Image steganographiee et chiffree sauvegardee !")
 
 def recuperer_donnees(chemin_image):
-    print("-> Extraction et Déchiffrement AEAD en cours...")
+    print("-> Extraction et Dechiffrement AEAD en cours...")
     img = Image.open(chemin_image)
     pixels = img.load()
     largeur, hauteur = img.size
@@ -219,7 +216,7 @@ def logout():
 @route('/login', method='POST')
 def login_sso():
     """
-    Intégration du code de l'enonce pour valider l'acces via cas.unilim.fr
+    Integration du code de l'enonce pour valider l'acces via cas.unilim.fr
     """
     username = request.forms.get('username')
     password = request.forms.get('password')
@@ -237,7 +234,7 @@ def login_sso():
         
         token = resultat.group(1)
 
-        # Tentative de connexion avec les identifiants de l'étudiant
+        # Tentative de connexion avec les identifiants de l'etudiant
         cookieProcessor = urllib.request.HTTPCookieProcessor()
         opener = urllib.request.build_opener(cookieProcessor)
         
@@ -267,7 +264,7 @@ def login_sso():
             # On affiche le succes et on redirige apres 2 secondes 
             return f"""
             <div style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
-                <h2 style="color: #28a745;">Authentification réussie via CAS !</h2>
+                <h2 style="color: #28a745;">Authentification reussie via CAS !</h2>
                 <p>Bienvenue <b>{username}</b>.</p>
                 <p style="color: #666;"><i>Redirection automatique vers le portail dans 2 secondes...</i></p>
                 <script>
@@ -278,12 +275,12 @@ def login_sso():
             </div>
             """
         else:
-            return "ECHEC : Identifiants incorrects ou TOTP requis (hors réseau)."
+            return "ECHEC : Identifiants incorrects ou TOTP requis (hors reseau)."
     except HTTPResponse :
         raise
     except Exception as e:
         print(f"ERREUR : {repr(e)}")
-        return f"ERREUR RÉSEAU : Impossible de joindre le serveur CAS ({e})"
+        return f"ERREUR ReSEAU : Impossible de joindre le serveur CAS ({e})"
 
 
 # ==========================================
@@ -380,7 +377,7 @@ def generer_visuel(identite, intitule, token):
     qr = qrcode.make(token) 
     qr.save("temp/qrcode.png", scale="2")
 
-    # Redimensionnement strict à 210x210 pixels
+    # Redimensionnement strict a 210x210 pixels
     img_qr = Image.open("temp/qrcode.png")
     img_qr = img_qr.resize((210, 210))
     img_qr.save("temp/qrcode.png")

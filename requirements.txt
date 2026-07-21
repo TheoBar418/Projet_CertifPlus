@@ -1,0 +1,7 @@
+bottle
+Pillow
+qrcode
+zbarlight
+cryptography
+PyJWT
+python-dotenv

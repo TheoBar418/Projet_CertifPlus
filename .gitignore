@@ -3,14 +3,15 @@
 __pycache__/
 *.pyc
 
-# --- Sécurité ---
+# --- Security ---
 *.key
 *.key.pem
 bundle_serveur.pem
 
-# --- Dossier temporaires ---
+# --- temporary folder ---
 temp/
 *.csr
 *.srl
-# --- Images générées dynamiquement ---
-mon_diplome.png
+
+# --- Environement ---
+.env
